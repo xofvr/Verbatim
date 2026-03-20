@@ -26,7 +26,7 @@ Verbatim runs in your **menu bar** (top-right of your screen). On first launch, 
 ## Requirements
 
 - macOS 15 (Sequoia) or later
-- Apple Silicon Mac recommended (M1 or newer)
+- Apple Silicon Mac (M1 or newer)
 
 ## Building from Source
 
