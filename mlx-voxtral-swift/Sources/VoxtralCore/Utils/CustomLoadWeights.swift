@@ -12,6 +12,24 @@ import Foundation
 import MLX
 import MLXNN
 
+/// Errors that can occur during weight loading
+public enum WeightLoadingError: Error, LocalizedError {
+    case extraParameters(count: Int, names: [String])
+    case missingParameters(count: Int, names: [String])
+    case shapeMismatch(parameter: String, expected: [Int], received: [Int])
+
+    public var errorDescription: String? {
+        switch self {
+        case .extraParameters(let count, let names):
+            return "Received \(count) parameters not in model: \n\(names.joined(separator: ",\n"))"
+        case .missingParameters(let count, let names):
+            return "Missing \(count) parameters: \n\(names.joined(separator: ",\n"))"
+        case .shapeMismatch(let parameter, let expected, let received):
+            return "Expected shape \(expected) but received shape \(received) for parameter \(parameter)"
+        }
+    }
+}
+
 extension VoxtralForConditionalGeneration {
     
     /**
@@ -39,22 +57,24 @@ extension VoxtralForConditionalGeneration {
             // Check for extra weights not in model
             let extras = Set(newWeights.keys).subtracting(Set(currentWeights.keys))
             if !extras.isEmpty {
-                let extrasList = extras.sorted().joined(separator: ",\n")
-                fatalError("Received \(extras.count) parameters not in model: \n\(extrasList)")
+                throw WeightLoadingError.extraParameters(count: extras.count, names: extras.sorted())
             }
-            
+
             // Check for missing weights
             let missing = Set(currentWeights.keys).subtracting(Set(newWeights.keys))
             if !missing.isEmpty {
-                let missingList = missing.sorted().joined(separator: ",\n")
-                fatalError("Missing \(missing.count) parameters: \n\(missingList)")
+                throw WeightLoadingError.missingParameters(count: missing.count, names: missing.sorted())
             }
-            
+
             // Validate shapes match
             for (key, currentValue) in currentWeights {
                 guard let newValue = newWeights[key] else { continue }
                 if newValue.shape != currentValue.shape {
-                    fatalError("Expected shape \(currentValue.shape) but received shape \(newValue.shape) for parameter \(key)")
+                    throw WeightLoadingError.shapeMismatch(
+                        parameter: key,
+                        expected: currentValue.shape,
+                        received: newValue.shape
+                    )
                 }
             }
         }

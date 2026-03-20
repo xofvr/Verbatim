@@ -113,7 +113,10 @@ public class VoxtralProcessor {
                 returnTensors: "mlx"
             )
             // Python: encoding["input_features"] = audio_features["input_features"]
-            encoding["input_features"] = (audioFeatures["input_features"] as! MLXArray)
+            guard let features = audioFeatures["input_features"] as? MLXArray else {
+                throw VoxtralError.invalidInput("Feature extractor did not return MLXArray for input_features")
+            }
+            encoding["input_features"] = features
         }
         
         // Python: if text is not None and self.tokenizer is not None:
@@ -326,7 +329,10 @@ public class VoxtralProcessor {
             inputFeatures = featuresDict["input_features"]!
         } else {
             // Handle case where audioFeatures has input_features property
-            inputFeatures = audioFeatures["input_features"] as! MLXArray
+            guard let feat = audioFeatures["input_features"] as? MLXArray else {
+                throw VoxtralError.invalidInput("Feature extractor did not return MLXArray for input_features")
+            }
+            inputFeatures = feat
         }
         
         // Python: num_chunks = input_features.shape[0]
@@ -573,7 +579,10 @@ public class VoxtralProcessor {
                             if let featuresDict = audioFeatures as? [String: MLXArray] {
                                 features = featuresDict["input_features"]!
                             } else {
-                                features = audioFeatures["input_features"] as! MLXArray
+                                guard let feat = audioFeatures["input_features"] as? MLXArray else {
+                                    throw VoxtralError.invalidInput("Feature extractor did not return MLXArray for input_features")
+                                }
+                                features = feat
                             }
                             
                             allAudioFeatures.append(features)

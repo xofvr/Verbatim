@@ -19,8 +19,22 @@ public final class VoxtralMemoryManager: @unchecked Sendable {
 
     // MARK: - Properties
 
-    /// Current memory optimization configuration
-    public var config: MemoryOptimizationConfig = .recommended()
+    /// Current memory optimization configuration (access via `config` computed property)
+    private var _config: MemoryOptimizationConfig = .recommended()
+
+    /// Thread-safe access to the memory optimization configuration
+    public var config: MemoryOptimizationConfig {
+        get {
+            lock.lock()
+            defer { lock.unlock() }
+            return _config
+        }
+        set {
+            lock.lock()
+            defer { lock.unlock() }
+            _config = newValue
+        }
+    }
 
     /// Counter for tracking eval cycles (for periodic cleanup)
     private var evalCounter: Int = 0
@@ -46,7 +60,9 @@ public final class VoxtralMemoryManager: @unchecked Sendable {
     public func fullCleanup() {
         Memory.clearCache()
         GPU.resetPeakMemory()  // resetPeakMemory still on GPU
+        lock.lock()
         evalCounter = 0
+        lock.unlock()
         VoxtralDebug.log("🧹 Full GPU cleanup performed")
     }
 
@@ -72,25 +88,29 @@ public final class VoxtralMemoryManager: @unchecked Sendable {
     /// Called during generation to apply memory optimization based on config
     /// - Parameter tokenIndex: Current token index in generation
     public func optimizeIfNeeded(tokenIndex: Int) {
-        guard config.evalFrequency > 0 else { return }
-
+        // Snapshot config under lock together with counter update
         lock.lock()
-        defer { lock.unlock() }
+        let currentConfig = _config
+        guard currentConfig.evalFrequency > 0 else {
+            lock.unlock()
+            return
+        }
 
         evalCounter += 1
 
-        if evalCounter >= config.evalFrequency {
-            evalCounter = 0
+        guard evalCounter >= currentConfig.evalFrequency else {
+            lock.unlock()
+            return
+        }
+        evalCounter = 0
+        lock.unlock()
 
-            // Clear cache if configured
-            if config.clearCacheOnEval {
-                Memory.clearCache()
-            }
-
-            // Reset peak memory tracking if configured
-            if config.resetPeakMemory {
-                GPU.resetPeakMemory()
-            }
+        // Perform cleanup outside lock (these are thread-safe MLX operations)
+        if currentConfig.clearCacheOnEval {
+            Memory.clearCache()
+        }
+        if currentConfig.resetPeakMemory {
+            GPU.resetPeakMemory()
         }
     }
 

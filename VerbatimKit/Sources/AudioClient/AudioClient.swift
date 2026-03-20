@@ -144,6 +144,8 @@ private final class LiveAudioCaptureRuntime: @unchecked Sendable {
     func setInputDevice(_ uid: String?) {
         stateQueue.async { [self] in
             selectedDeviceUID = (uid?.isEmpty == true) ? nil : uid
+            // Discard standby engine — it was warmed with the old device
+            standbyEngine = nil
         }
     }
 
@@ -187,15 +189,25 @@ private final class LiveAudioCaptureRuntime: @unchecked Sendable {
         standbyEngine = eng
     }
 
-    private func applyDeviceSelectionLocked(to eng: AVAudioEngine) {
-        guard let uid = selectedDeviceUID else { return }
+    /// Applies the user's selected input device to the engine.
+    /// Returns `true` if a non-default device was successfully applied.
+    @discardableResult
+    private func applyDeviceSelectionLocked(to eng: AVAudioEngine) -> Bool {
+        guard let uid = selectedDeviceUID else { return false }
         let devices = deviceManager.availableInputDevices()
-        guard let device = devices.first(where: { $0.uid == uid }) else { return }
+        guard let device = devices.first(where: { $0.uid == uid }) else {
+            audioLogger.warning("Selected device UID '\(uid, privacy: .public)' not found in available devices, using default")
+            return false
+        }
 
         let inputNode = eng.inputNode
-        let audioUnit = inputNode.audioUnit!
+        guard let audioUnit = inputNode.audioUnit else {
+            audioLogger.error("inputNode.audioUnit is nil — cannot set device '\(device.name, privacy: .public)'")
+            return false
+        }
+
         var deviceID = device.id
-        AudioUnitSetProperty(
+        let status = AudioUnitSetProperty(
             audioUnit,
             kAudioOutputUnitProperty_CurrentDevice,
             kAudioUnitScope_Global,
@@ -203,6 +215,14 @@ private final class LiveAudioCaptureRuntime: @unchecked Sendable {
             &deviceID,
             UInt32(MemoryLayout<AudioDeviceID>.size)
         )
+
+        if status != noErr {
+            audioLogger.error("AudioUnitSetProperty failed (status \(status)) for device '\(device.name, privacy: .public)'")
+            return false
+        }
+
+        audioLogger.info("Input device set to '\(device.name, privacy: .public)' (uid: \(uid, privacy: .public))")
+        return true
     }
 
     private func startRecordingLocked(levelHandler: @escaping @Sendable (Double) -> Void) throws {
@@ -232,14 +252,24 @@ private final class LiveAudioCaptureRuntime: @unchecked Sendable {
             eng = standby
         } else {
             eng = AVAudioEngine()
-            do {
-                try withObjCExceptionHandling {
-                    self.applyDeviceSelectionLocked(to: eng)
-                }
-            } catch {
-                audioLogger.warning("ObjC exception applying device selection, falling back to default: \(error, privacy: .public)")
-                // Continue with default device
+        }
+
+        // Always apply device selection — standby engine may have been
+        // warmed with a different device than the user's current choice.
+        do {
+            var applied = false
+            try withObjCExceptionHandling {
+                applied = self.applyDeviceSelectionLocked(to: eng)
             }
+            // If user selected a specific device but it failed, don't silently
+            // record from the wrong device — tell them.
+            if selectedDeviceUID != nil, !applied {
+                throw AudioClientError.failedToStart(reason: "could not switch to the selected microphone — try choosing a different one")
+            }
+        } catch let error as AudioClientError {
+            throw error
+        } catch {
+            audioLogger.warning("ObjC exception applying device selection, falling back to default: \(error, privacy: .public)")
         }
 
         let inputNode: AVAudioInputNode
@@ -342,10 +372,18 @@ private final class LiveAudioCaptureRuntime: @unchecked Sendable {
                     return buffer
                 }
                 if error == nil, convertedBuffer.frameLength > 0 {
-                    try? file.write(from: convertedBuffer)
+                    do {
+                        try file.write(from: convertedBuffer)
+                    } catch {
+                        audioLogger.error("Failed to write converted audio buffer: \(error, privacy: .public)")
+                    }
                 }
             } else {
-                try? file.write(from: buffer)
+                do {
+                    try file.write(from: buffer)
+                } catch {
+                    audioLogger.error("Failed to write audio buffer: \(error, privacy: .public)")
+                }
             }
         }
             }

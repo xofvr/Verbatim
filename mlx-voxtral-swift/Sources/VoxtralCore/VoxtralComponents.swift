@@ -528,11 +528,11 @@ public class TekkenTokenizer {
             if pairs.isEmpty { break }
             
             // Trouver la paire avec le rank le plus faible (priorité haute)
-            let bestPair = pairs.min { pair1, pair2 in
+            guard let bestPair = pairs.min(by: { pair1, pair2 in
                 let rank1 = mergeableRanks[pair1.0 + pair1.1] ?? Int.max
                 let rank2 = mergeableRanks[pair2.0 + pair2.1] ?? Int.max
                 return rank1 < rank2
-            }!
+            }) else { break }
             
             // Merger la meilleure paire
             let newData = bestPair.0 + bestPair.1
