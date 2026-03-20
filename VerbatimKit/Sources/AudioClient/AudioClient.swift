@@ -176,7 +176,14 @@ private final class LiveAudioCaptureRuntime: @unchecked Sendable {
         guard !deviceManager.availableInputDevices().isEmpty else { return }
 
         let eng = AVAudioEngine()
-        applyDeviceSelectionLocked(to: eng)
+        do {
+            try withObjCExceptionHandling {
+                self.applyDeviceSelectionLocked(to: eng)
+            }
+        } catch {
+            audioLogger.warning("ObjC exception during standby warmup (non-fatal): \(error, privacy: .public)")
+            return
+        }
         standbyEngine = eng
     }
 
@@ -225,10 +232,32 @@ private final class LiveAudioCaptureRuntime: @unchecked Sendable {
             eng = standby
         } else {
             eng = AVAudioEngine()
-            applyDeviceSelectionLocked(to: eng)
+            do {
+                try withObjCExceptionHandling {
+                    self.applyDeviceSelectionLocked(to: eng)
+                }
+            } catch {
+                audioLogger.warning("ObjC exception applying device selection, falling back to default: \(error, privacy: .public)")
+                // Continue with default device
+            }
         }
 
-        let inputNode = eng.inputNode
+        let inputNode: AVAudioInputNode
+        do {
+            var node: AVAudioInputNode?
+            try withObjCExceptionHandling {
+                node = eng.inputNode
+            }
+            guard let unwrapped = node else {
+                throw AudioClientError.failedToStart(reason: "audio engine has no input node")
+            }
+            inputNode = unwrapped
+        } catch let error as AudioClientError {
+            throw error
+        } catch {
+            audioLogger.error("ObjC exception accessing inputNode: \(error, privacy: .public)")
+            throw AudioClientError.failedToStart(reason: "audio input unavailable — \(error)")
+        }
         let inputFormat = inputNode.outputFormat(forBus: 0)
         audioLogger.info("Input format: \(inputFormat.description, privacy: .public)")
 
@@ -266,7 +295,12 @@ private final class LiveAudioCaptureRuntime: @unchecked Sendable {
         let smoother = self.levelSmoother
         let handler = levelHandler
 
-        inputNode.installTap(onBus: 0, bufferSize: 4096, format: inputFormat) { buffer, _ in
+        // Defensively remove any existing tap before installing a new one
+        inputNode.removeTap(onBus: 0)
+
+        do {
+            try withObjCExceptionHandling {
+                inputNode.installTap(onBus: 0, bufferSize: 4096, format: inputFormat) { buffer, _ in
             // Compute RMS for level metering
             guard let channelData = buffer.floatChannelData else { return }
             let frameLength = Int(buffer.frameLength)
@@ -313,6 +347,11 @@ private final class LiveAudioCaptureRuntime: @unchecked Sendable {
             } else {
                 try? file.write(from: buffer)
             }
+        }
+            }
+        } catch {
+            audioLogger.error("ObjC exception installing audio tap: \(error, privacy: .public)")
+            throw AudioClientError.failedToStart(reason: "audio tap failed — \(error)")
         }
 
         do {

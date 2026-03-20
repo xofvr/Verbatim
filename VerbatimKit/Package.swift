@@ -129,9 +129,14 @@ let package = Package(
         // MARK: - Clients
 
         .target(
+            name: "ObjCExceptionCatcher",
+            publicHeadersPath: "include"
+        ),
+        .target(
             name: "AudioClient",
             dependencies: [
                 .shared,
+                "ObjCExceptionCatcher",
             ]
         ),
         .target(
