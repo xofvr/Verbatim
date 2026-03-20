@@ -23,6 +23,8 @@
             <pubDate>Thu, 20 Mar 2026 00:00:00 +0000</pubDate>
             <enclosure url="https://github.com/xofvr/Verbatim/releases/download/v1.0.2/Verbatim-1.0.2.dmg"
                        type="application/octet-stream"
+                       length="27234739"
+                       sparkle:edSignature="ceAcs8PwM4dxaaITj00/s4IH/HtKcwnTAFByxGX3pdfBTU3llmMw4LpIc/YDt6QRA2AZoAzQO/QegxXoAaYKCA=="
                        sparkle:os="macos"/>
         </item>
     </channel>
