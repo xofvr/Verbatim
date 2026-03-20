@@ -28,7 +28,7 @@ xcodebuild archive \
     -archivePath "$ARCHIVE_PATH" \
     CODE_SIGNING_ALLOWED=NO \
     CODE_SIGN_IDENTITY="-" \
-    ONLY_ACTIVE_ARCH=NO \
+    ARCHS=arm64 \
     2>&1 | tail -5
 
 # The .app lives inside the archive
