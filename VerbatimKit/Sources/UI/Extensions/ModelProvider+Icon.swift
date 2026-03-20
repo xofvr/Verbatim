@@ -1,0 +1,16 @@
+import Assets
+import Shared
+import SwiftUI
+
+public extension ModelProvider {
+    var icon: Image {
+        switch self {
+        case .groq: .openai
+        case .appleSpeech: .swiftLogo
+        case .fluidAudio: .qwen
+        case .nvidia: .nvidia
+        case .whisperKit: .openai
+        case .voxtralCore: .mistral
+        }
+    }
+}

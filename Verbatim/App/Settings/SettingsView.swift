@@ -1,0 +1,611 @@
+import Assets
+import KeyboardShortcuts
+import ModelDownloadFeature
+import Shared
+import SwiftUI
+import UI
+
+// MARK: - Settings Root
+
+struct SettingsView: View {
+    @State var selectedTab: SettingsTab = .general
+    @Bindable var viewModel: SettingsViewModel
+
+    var body: some View {
+        TabView(selection: $selectedTab) {
+            Tab("General", systemImage: "gearshape", value: .general) {
+                GeneralPane(viewModel: viewModel)
+            }
+            Tab("Transcription", systemImage: "waveform", value: .transcription) {
+                TranscriptionPane(viewModel: viewModel)
+            }
+            Tab("History", systemImage: "clock", value: .history) {
+                HistoryPane(viewModel: viewModel)
+            }
+        }
+    }
+}
+
+// MARK: - General Pane
+
+struct GeneralPane: View {
+    @Bindable var viewModel: SettingsViewModel
+
+    var body: some View {
+        Form {
+            Section("Shortcut") {
+                if viewModel.shortcutTriggerMode == .combo {
+                    LabeledContent("Push to Talk") {
+                        KeyboardShortcuts.Recorder(for: .pushToTalk)
+                    }
+                    Text("Tap to toggle recording, or hold and release to stop.")
+                        .settingDescription()
+                } else {
+                    LabeledContent("Double-Tap Key") {
+                        DoubleTapRecorder(key: viewModel.doubleTapRecorderBinding)
+                    }
+                    Text("Press the same key twice quickly to activate. Hold the second press for push-to-talk.")
+                        .settingDescription()
+
+                    LabeledContent("Trigger Delay") {
+                        Picker("Trigger Delay", selection: Binding(viewModel.$doubleTapInterval)) {
+                            Text("0.3s").tag(0.3)
+                            Text("0.4s").tag(0.4)
+                            Text("0.5s").tag(0.5)
+                        }
+                        .pickerStyle(.segmented)
+                        .frame(width: 180)
+                        .labelsHidden()
+                    }
+                    Text("Maximum gap between taps to trigger.")
+                        .settingDescription()
+                }
+
+                LabeledContent("Hold Duration") {
+                    Picker("Hold Duration", selection: Binding(viewModel.$pushToTalkThreshold)) {
+                        ForEach(PushToTalkThreshold.allCases) { threshold in
+                            Text(threshold.displayName).tag(threshold)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                    .frame(width: 180)
+                    .labelsHidden()
+                }
+
+                Toggle("Double-tap mode", isOn: Binding(
+                    get: { viewModel.shortcutTriggerMode == .doubleTap },
+                    set: { viewModel.triggerModeChanged($0 ? .doubleTap : .combo) }
+                ))
+                Text("Use a single key pressed twice quickly instead of a key combo.")
+                    .settingDescription()
+            }
+
+            Section("Permissions") {
+                LabeledContent("Microphone") {
+                    if viewModel.microphoneAuthorized {
+                        Label("Granted", systemImage: "checkmark.circle.fill")
+                            .foregroundStyle(.green)
+                    } else {
+                        Button("Grant Access") {
+                            Task { await viewModel.grantMicrophonePermissionButtonTapped() }
+                        }
+                    }
+                }
+
+                LabeledContent("Accessibility") {
+                    if viewModel.accessibilityAuthorized {
+                        Label("Granted", systemImage: "checkmark.circle.fill")
+                            .foregroundStyle(.green)
+                    } else {
+                        Button("Grant Access") {
+                            Task { await viewModel.grantAccessibilityPermissionButtonTapped() }
+                        }
+                    }
+                }
+
+                if let message = viewModel.permissionMessage {
+                    Text(message)
+                        .settingDescription()
+                }
+            }
+
+            Section("Output") {
+                Picker("After transcribing", selection: Binding(viewModel.$outputMode)) {
+                    ForEach(OutputMode.allCases) { mode in
+                        Text(mode.displayName).tag(mode)
+                    }
+                }
+                Text("Clipboard copies the text for you to paste. Paste in Place types it directly into the active app.")
+                    .settingDescription()
+
+                if viewModel.outputMode == .pasteInPlace {
+                    Toggle("Restore clipboard after paste", isOn: Binding(viewModel.$restoreClipboardAfterPaste))
+                    Text("Puts back whatever was on your clipboard before Verbatim pasted.")
+                        .settingDescription()
+                }
+            }
+
+            Section("Privacy") {
+                Toggle("Hide from screen sharing", isOn: Binding(
+                    get: { viewModel.hideFromScreenShare },
+                    set: { newValue in
+                        viewModel.$hideFromScreenShare.withLock { $0 = newValue }
+                        viewModel.applyPrivacySettings()
+                    }
+                ))
+                Text("Hides Verbatim windows during screen sharing and recordings.")
+                    .settingDescription()
+            }
+
+            Section("Diagnostics") {
+                Toggle("Enable logs", isOn: Binding(viewModel.$logsEnabled))
+                Text("Saves a log file for troubleshooting. Off by default.")
+                    .settingDescription()
+
+                Button("Export Logs…") {
+                    viewModel.exportLogs()
+                }
+                .disabled(!viewModel.canExportLogs)
+            }
+        }
+        .formStyle(.grouped)
+        .task {
+            await viewModel.refreshPermissions()
+        }
+    }
+}
+
+// MARK: - Transcription Pane
+
+struct TranscriptionPane: View {
+    @Bindable var viewModel: SettingsViewModel
+    @State private var showDeleteConfirmation = false
+    @State private var showAdvancedGroq = false
+
+    var body: some View {
+        Form {
+            // MARK: Model
+            Section("Model") {
+                Picker("Model", selection: Binding(
+                    get: { viewModel.selectedModelID },
+                    set: { viewModel.selectedModelID = $0 }
+                )) {
+                    ForEach(viewModel.availableModelOptions) { option in
+                        HStack {
+                            providerIcon(for: option)
+                                .resizable()
+                                .aspectRatio(contentMode: .fit)
+                                .frame(width: 12, height: 12)
+                                .clipShape(.rect(cornerRadius: 3))
+                            Text(option.displayName)
+                            if option.isRecommended {
+                                Text("Recommended")
+                                    .font(.caption2)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                        .tag(option.rawValue)
+                    }
+                }
+
+                if let selectedModel = viewModel.downloadModel.selectedModelOption {
+                    if let size = selectedModel.sizeLabel {
+                        LabeledContent("Size") {
+                            Text(size)
+                        }
+                    }
+                    modelDownloadStatus
+                }
+
+                if viewModel.isWarmingModel {
+                    HStack(spacing: 8) {
+                        Image(systemName: "flame.fill")
+                            .foregroundStyle(.orange)
+                        Text("Warming up…")
+                            .foregroundStyle(.secondary)
+                    }
+                    .shimmering()
+                }
+            }
+
+            // MARK: Language
+            Section("Language") {
+                TextField("Language code", text: Binding(viewModel.$preferredLanguage))
+                    .textFieldStyle(.roundedBorder)
+                Text("ISO language code sent to the transcription model (e.g. en, es, fr, de, ja).")
+                    .settingDescription()
+            }
+
+            // MARK: Groq API
+            Section("Groq API") {
+                Picker("Provider", selection: Binding(viewModel.$providerPolicy)) {
+                    ForEach(ProviderPolicy.allCases) { policy in
+                        Text(policy.displayName).tag(policy)
+                    }
+                }
+                Text(viewModel.effectiveProviderPolicy.description)
+                    .settingDescription()
+
+                SecureField("API Key", text: Binding(
+                    get: { viewModel.groqAPIKeyDraft },
+                    set: { viewModel.groqAPIKeyDraft = $0 }
+                ))
+                .onSubmit {
+                    viewModel.saveGroqAPIKeyDraft()
+                }
+
+                HStack {
+                    Button("Save Key") {
+                        viewModel.saveGroqAPIKeyDraft()
+                    }
+                    .disabled(viewModel.groqAPIKeyDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+
+                    if viewModel.hasGroqAPIKeyStored {
+                        Label("Saved", systemImage: "checkmark.circle.fill")
+                            .foregroundStyle(.green)
+                            .font(.caption)
+
+                        Spacer()
+
+                        Button("Remove Key", role: .destructive) {
+                            viewModel.clearGroqAPIKey()
+                        }
+                    }
+                }
+
+                Text(viewModel.hasGroqAPIKeyStored
+                     ? "Your key is saved. Enter a new one to replace it."
+                     : "Get a free API key from groq.com. Required for cloud transcription.")
+                    .settingDescription()
+
+                DisclosureGroup("Endpoint", isExpanded: $showAdvancedGroq) {
+                    TextField("API URL", text: Binding(viewModel.$groqAPIBaseURL))
+                        .textFieldStyle(.roundedBorder)
+                    Text("Only change this if you're using a custom Groq-compatible endpoint.")
+                        .settingDescription()
+                }
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            }
+
+            // MARK: Apple Intelligence
+            Section {
+                if viewModel.appleIntelligenceAvailable {
+                    Toggle("Enhance with Apple Intelligence", isOn: Binding(viewModel.$appleIntelligenceEnabled))
+                    Text("Post-process transcriptions on-device to fix grammar, punctuation, and formatting.")
+                        .settingDescription()
+                } else {
+                    LabeledContent("Status") {
+                        Text("Unavailable")
+                            .foregroundStyle(.secondary)
+                    }
+                    Text("Requires macOS 26 with Apple Intelligence enabled.")
+                        .settingDescription()
+                }
+            } header: {
+                HStack(spacing: 6) {
+                    Image.appleIntelligence
+                        .resizable()
+                        .aspectRatio(contentMode: .fit)
+                        .frame(width: 16, height: 16)
+                        .clipShape(RoundedRectangle(cornerRadius: 3))
+                    Text("Apple Intelligence")
+                }
+            }
+
+            // MARK: Mode
+            if viewModel.smartModeAvailable {
+                Section("Mode") {
+                    Picker("Transcription Mode", selection: Binding(viewModel.$transcriptionMode)) {
+                        ForEach(TranscriptionMode.allCases) { mode in
+                            Text(mode.displayName).tag(mode)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                    Text(viewModel.transcriptionMode.description)
+                        .settingDescription()
+                }
+
+                if viewModel.transcriptionMode == .smart {
+                    Section("Smart Prompt") {
+                        TextField("Prompt", text: Binding(viewModel.$smartPrompt), axis: .vertical)
+                            .lineLimit(3 ... 6)
+                    }
+                }
+            }
+
+            // MARK: Processing
+            Section("Processing") {
+                Toggle("Trim silence", isOn: Binding(viewModel.$trimSilenceEnabled))
+                Text("Removes silent segments from the start and end of your recording.")
+                    .settingDescription()
+                Toggle("Auto speed-up", isOn: Binding(viewModel.$autoSpeedEnabled))
+                Text("Speeds up quiet audio to reduce transcription time.")
+                    .settingDescription()
+            }
+
+            // MARK: Vocabulary
+            Section("Vocabulary") {
+                TextField("Prompt Hints", text: Binding(
+                    get: { viewModel.vocabularyPromptHints },
+                    set: { viewModel.vocabularyPromptHints = $0 }
+                ), axis: .vertical)
+                .lineLimit(2 ... 4)
+                Text("Words and phrases the model should recognise (sent to Groq as context).")
+                    .settingDescription()
+
+                TextEditor(text: Binding(
+                    get: { viewModel.vocabularyTermsText },
+                    set: { viewModel.vocabularyTermsText = $0 }
+                ))
+                .font(.system(.body, design: .monospaced))
+                .frame(minHeight: 100)
+
+                Text("Replacements applied to all transcripts. One per line: `input=Replacement`")
+                    .settingDescription()
+            }
+
+            // MARK: Managed Config
+            if !viewModel.managedConfigURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                Section("Managed Config") {
+                    TextField("Config URL", text: Binding(viewModel.$managedConfigURL))
+                        .textFieldStyle(.roundedBorder)
+                    HStack {
+                        Text(viewModel.managedConfigStatus)
+                            .foregroundStyle(.secondary)
+                        Spacer()
+                        Button("Refresh") {
+                            viewModel.refreshManagedConfig()
+                        }
+                    }
+                }
+            }
+        }
+        .formStyle(.grouped)
+        .alert("Delete Model", isPresented: $showDeleteConfirmation) {
+            Button("Delete", role: .destructive) {
+                Task { await viewModel.deleteModelButtonTapped() }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("This will remove the downloaded model from your device. You can re-download it later.")
+        }
+    }
+
+    private func providerIcon(for option: ModelOption) -> Image {
+        switch option.provider {
+        case .groq: .openai
+        case .appleSpeech: .swiftLogo
+        case .fluidAudio: .qwen
+        case .nvidia: .nvidia
+        case .whisperKit: .openai
+        case .voxtralCore: .mistral
+        }
+    }
+
+    @ViewBuilder
+    private var modelDownloadStatus: some View {
+        if let selectedModel = viewModel.downloadModel.selectedModelOption, !selectedModel.requiresDownload {
+            LabeledContent("Status") {
+                Label("Ready", systemImage: "checkmark.circle.fill")
+                    .foregroundStyle(.green)
+            }
+        } else {
+            switch viewModel.downloadModel.state {
+            case .downloaded:
+                LabeledContent("Status") {
+                    Label("Downloaded", systemImage: "checkmark.circle.fill")
+                        .foregroundStyle(.green)
+                }
+                Button("Delete Model", role: .destructive) {
+                    showDeleteConfirmation = true
+                }
+            case let .downloading(progress):
+                downloadProgressSection(progress: progress, isPaused: false)
+            case let .paused(progress):
+                downloadProgressSection(progress: progress, isPaused: true)
+            case .notDownloaded, .preparing:
+                Button("Download Model") {
+                    Task { await viewModel.downloadButtonTapped() }
+                }
+            case let .failed(message):
+                Button("Download Model") {
+                    Task { await viewModel.downloadButtonTapped() }
+                }
+                Text(message)
+                    .foregroundStyle(.red)
+                    .font(.caption)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func downloadProgressSection(progress: ModelDownloadState.Progress, isPaused: Bool) -> some View {
+        let modelName = viewModel.downloadModel.downloadingModelOption?.displayName
+            ?? viewModel.downloadModel.selectedModelOption?.displayName ?? "model"
+        HStack(spacing: 12) {
+            ProgressView(value: progress.fraction)
+                .progressViewStyle(.circular)
+                .scaleEffect(0.5)
+                .frame(width: 16, height: 16)
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Downloading \(modelName)")
+                Text(progress.summaryText)
+                    .settingDescription()
+            }
+        }
+        HStack {
+            if isPaused {
+                Button("Resume") {
+                    Task { await viewModel.resumeButtonTapped() }
+                }
+            } else {
+                Button("Pause") {
+                    viewModel.pauseButtonTapped()
+                }
+            }
+
+            Button("Cancel") {
+                viewModel.cancelButtonTapped()
+            }
+        }
+    }
+}
+
+// MARK: - History Pane
+
+struct HistoryPane: View {
+    @Bindable var viewModel: SettingsViewModel
+    @State private var historyAlert: HistoryAlert?
+
+    var body: some View {
+        Form {
+            if !viewModel.recentHistoryEntries.isEmpty {
+                Section("Recent") {
+                    ForEach(viewModel.recentHistoryEntries) { entry in
+                        let transcript = viewModel.transcriptText(for: entry)
+                        HStack(alignment: .top) {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(transcript)
+                                    .lineLimit(2)
+                                    .truncationMode(.tail)
+                                Text(entry.timestamp, style: .relative)
+                                    .settingDescription()
+                            }
+                            Spacer()
+                            Button {
+                                viewModel.copyHistoryEntry(entry)
+                            } label: {
+                                Image(systemName: "doc.on.doc")
+                            }
+                            .buttonStyle(.borderless)
+                            .help("Copy transcript")
+                        }
+                    }
+                }
+            }
+
+            Section("Retention") {
+                Picker("Keep", selection: Binding(
+                    get: { viewModel.historyRetentionMode },
+                    set: { viewModel.historyRetentionModeChanged($0) }
+                )) {
+                    ForEach(HistoryRetentionMode.allCases) { mode in
+                        Text(mode.displayName).tag(mode)
+                    }
+                }
+            }
+
+            Section("Compression") {
+                Toggle("Extra compression", isOn: Binding(viewModel.$compressHistoryAudio))
+                Text("History audio is saved as AAC (.m4a) by default. Enable for lower-bitrate files.")
+                    .settingDescription()
+            }
+
+            Section("Storage") {
+                LabeledContent("Location") {
+                    Text(viewModel.historyDirectoryPath)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                        .foregroundStyle(.secondary)
+                        .textSelection(.enabled)
+                }
+                Button("Open in Finder") {
+                    viewModel.openHistoryInFinder()
+                }
+            }
+
+            Section("Clear Data") {
+                HStack(spacing: 12) {
+                    Button("Delete All History & Media", role: .destructive) {
+                        historyAlert = .deleteAll
+                    }
+                    .frame(maxWidth: .infinity)
+
+                    Button("Delete Media Only", role: .destructive) {
+                        historyAlert = .deleteMedia
+                    }
+                    .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.bordered)
+            }
+        }
+        .formStyle(.grouped)
+        .alert(historyAlert?.title ?? "", isPresented: isShowingHistoryAlert) {
+            if let historyAlert {
+                Button(historyAlert.confirmTitle, role: .destructive) {
+                    performHistoryAction(for: historyAlert)
+                    self.historyAlert = nil
+                }
+            }
+            Button("Cancel", role: .cancel) {
+                historyAlert = nil
+            }
+        } message: {
+            if let historyAlert {
+                Text(historyAlert.message)
+            }
+        }
+    }
+
+    private var isShowingHistoryAlert: Binding<Bool> {
+        Binding(
+            get: { historyAlert != nil },
+            set: { isPresented in
+                if !isPresented {
+                    historyAlert = nil
+                }
+            }
+        )
+    }
+
+    private func performHistoryAction(for alert: HistoryAlert) {
+        switch alert {
+        case .deleteAll:
+            viewModel.deleteAllHistory()
+        case .deleteMedia:
+            viewModel.deleteMediaOnly()
+        }
+    }
+}
+
+private enum HistoryAlert {
+    case deleteAll
+    case deleteMedia
+
+    var title: String {
+        switch self {
+        case .deleteAll:
+            return "Delete All History & Media"
+        case .deleteMedia:
+            return "Delete Media Only"
+        }
+    }
+
+    var confirmTitle: String {
+        switch self {
+        case .deleteAll:
+            return "Delete All"
+        case .deleteMedia:
+            return "Delete Media"
+        }
+    }
+
+    var message: String {
+        switch self {
+        case .deleteAll:
+            return "This will permanently delete all transcription history, audio files, and transcript files."
+        case .deleteMedia:
+            return "This will delete all saved audio files but keep your transcription history intact."
+        }
+    }
+}
+
+// MARK: - Helpers
+
+private extension View {
+    func settingDescription() -> some View {
+        font(.caption)
+            .foregroundStyle(.secondary)
+    }
+}

@@ -1,0 +1,20 @@
+{
+  "vocabulary": {
+    "promptHints": "Groq, PostgreSQL",
+    "terms": {
+      "groq": "Groq",
+      "postgresql": "PostgreSQL"
+    }
+  },
+  "defaultLanguage": "en",
+  "providerPolicy": "groq_primary_local_fallback",
+  "features": {
+    "cloudTranscriptionAllowed": true,
+    "pasteInPlaceAllowed": true,
+    "inAppUpdatesEnabled": false
+  },
+  "metadata": {
+    "version": 1,
+    "environment": "production"
+  }
+}

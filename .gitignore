@@ -1,0 +1,65 @@
+# ===== macOS =====
+.DS_Store
+._*
+.Spotlight-V100
+.Trashes
+
+# ===== Xcode =====
+# User-specific settings (window positions, breakpoints, etc.)
+xcuserdata/
+*.xcuserstate
+*.xccheckout
+*.moved-aside
+
+# Build artifacts
+build/
+DerivedData/
+*.hmap
+*.ipa
+*.dSYM.zip
+*.dSYM/
+
+# ===== Swift Package Manager =====
+.build/
+.swiftpm/
+# Note: Package.resolved is committed — it locks dependency versions
+# so everyone builds with the same versions (Apple recommended)
+
+# ===== ML Model files (too large for git) =====
+*.gguf
+*.safetensors
+*.bin
+*.pt
+*.pth
+*.onnx
+*.mlmodelc/
+*.mlpackage/
+
+# ===== Secrets & signing =====
+ops/*.p8
+ops/*.p12
+ops/*.key
+ops/*.pem
+ops/*.env
+ops/private/
+secret_keys/
+
+# ===== Build & release =====
+build-release/
+*.app/
+*.framework/
+*.o
+*.so
+*.dylib
+*.a
+
+# ===== Claude Code =====
+.claude/
+
+# ===== Temp & logs =====
+*.tmp
+*.log
+*.dump
+
+# ===== Legacy patterns =====
+.derived/
