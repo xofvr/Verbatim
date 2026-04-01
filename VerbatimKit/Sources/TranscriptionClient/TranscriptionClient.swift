@@ -14,7 +14,7 @@ import Speech
 @DependencyClient
 public struct TranscriptionClient: Sendable {
     public var prepareModelIfNeeded: @Sendable (ModelOption) async throws -> Void
-    public var transcribe: @Sendable (URL, ModelOption, TranscriptionMode, String?, ProviderPolicy, String?, VocabularyProfile) async throws -> TranscriptionResult
+    public var transcribe: @Sendable (URL, ModelOption, TranscriptionMode, String?, ProviderPolicy, String?, VocabularyProfile, Bool, Bool) async throws -> TranscriptionResult
     public var unloadModel: @Sendable () async -> Void = {}
     public var audioDurationSeconds: @Sendable (URL) -> Double = { _ in 0 }
 }
@@ -42,7 +42,7 @@ extension TranscriptionClient: DependencyKey {
                 guard let pipelineModel = option.pipelineModel else { return }
                 try await mlxClient.prepareModelIfNeeded(pipelineModel)
             },
-            transcribe: { audioURL, option, mode, prompt, providerPolicy, language, vocabulary in
+            transcribe: { audioURL, option, mode, prompt, providerPolicy, language, vocabulary, trimEnabled, speedEnabled in
                 @Dependency(\.mlxClient) var mlxClient
                 @Dependency(\.audioTrimClient) var trimClient
                 @Dependency(\.audioSpeedClient) var speedClient
@@ -51,9 +51,6 @@ extension TranscriptionClient: DependencyKey {
                 if option.requiresDownload, let pipelineModel = option.pipelineModel {
                     try await mlxClient.prepareModelIfNeeded(pipelineModel)
                 }
-
-                @Shared(.trimSilenceEnabled) var trimEnabled
-                @Shared(.autoSpeedEnabled) var speedEnabled
 
                 let requestID = UUID().uuidString
                 let requestStartUptime = ProcessInfo.processInfo.systemUptime
@@ -84,7 +81,7 @@ extension TranscriptionClient: DependencyKey {
                     stage = "trim"
                     let trimStartUptime = ProcessInfo.processInfo.systemUptime
                     let beforeTrimDuration = audioFileDurationSeconds(workingAudioURL)
-                    let trimmedURL = try await trimClient.trimSilence(workingAudioURL, Self.trimSilenceThreshold)
+                    let trimmedURL = try await trimClient.trimSilence(workingAudioURL, TranscriptionConstants.trimSilenceThreshold)
                     if trimmedURL != workingAudioURL {
                         generatedAudioURLs.insert(trimmedURL)
                         workingAudioURL = trimmedURL
@@ -113,7 +110,7 @@ extension TranscriptionClient: DependencyKey {
                 }
 
                 let duration = await audioFileDurationSecondsAsync(workingAudioURL)
-                if speedEnabled, let speedRate = Self.autoSpeedRate(for: duration) {
+                if speedEnabled, let speedRate = TranscriptionConstants.autoSpeedRate(for: duration) {
                     stage = "speed"
                     let speedStartUptime = ProcessInfo.processInfo.systemUptime
                     let beforeSpeedDuration = duration
@@ -140,7 +137,7 @@ extension TranscriptionClient: DependencyKey {
                         )
                     )
                 } else {
-                    let resolvedRate = speedEnabled ? (Self.autoSpeedRate(for: duration) ?? 0) : 0
+                    let resolvedRate = speedEnabled ? (TranscriptionConstants.autoSpeedRate(for: duration) ?? 0) : 0
                     logClient.debug(
                         "TranscriptionClient",
                         "Speed stage skipped. requestID=\(requestID), autoSpeedEnabled=\(speedEnabled), rate=\(resolvedRate)"
@@ -218,7 +215,7 @@ extension TranscriptionClient: TestDependencyKey {
     public static var testValue: Self {
         Self(
             prepareModelIfNeeded: { _ in },
-            transcribe: { _, option, _, _, _, _, _ in
+            transcribe: { _, option, _, _, _, _, _, _, _ in
                 TranscriptionResult(
                     text: "Test transcription",
                     providerID: option.providerDisplayName,
@@ -251,23 +248,6 @@ private func audioFileDurationSecondsAsync(_ url: URL) async -> Double {
     }.value
 }
 
-private extension TranscriptionClient {
-    static let defaultSmartPrompt = "Clean up filler words and repeated phrases. Return a polished version of what was said."
-    static let trimSilenceThreshold: Float = 0.003
-
-    static func autoSpeedRate(for audioDuration: Double) -> Double? {
-        switch audioDuration {
-        case ..<45:
-            return nil
-        case 45..<90:
-            return 1.1
-        case 90..<180:
-            return 1.2
-        default:
-            return 1.25
-        }
-    }
-}
 
 private func formatElapsedSeconds(_ seconds: Double) -> String {
     String(format: "%.3fs", seconds)

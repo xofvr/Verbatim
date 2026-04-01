@@ -7,6 +7,7 @@ struct RefiningCapsuleContent: View {
             Image(systemName: "apple.intelligence")
                 .font(.caption2.weight(.semibold))
                 .foregroundStyle(.primary)
+                .accessibilityHidden(true)
 
             Text("Refining")
                 .font(.footnote.weight(.semibold))
@@ -26,6 +27,8 @@ struct RefiningCapsuleContent: View {
             }
         }
         .clipShape(.capsule)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Refining with Apple Intelligence")
     }
 }
 

@@ -50,6 +50,48 @@ public final class AudioDeviceManager: @unchecked Sendable {
         }
     }
 
+    public func isBluetoothInputDevice(uid: String) -> Bool {
+        guard
+            let device = availableInputDevices().first(where: { $0.uid == uid }),
+            let transportType = deviceTransportType(device.id)
+        else {
+            return false
+        }
+
+        switch transportType {
+        case kAudioDeviceTransportTypeBluetooth, kAudioDeviceTransportTypeBluetoothLE:
+            return true
+        default:
+            return false
+        }
+    }
+
+    public func isBluetoothDevice(_ deviceID: AudioDeviceID) -> Bool {
+        guard let transportType = deviceTransportType(deviceID) else { return false }
+        switch transportType {
+        case kAudioDeviceTransportTypeBluetooth, kAudioDeviceTransportTypeBluetoothLE:
+            return true
+        default:
+            return false
+        }
+    }
+
+    public func systemDefaultInputDeviceID() -> AudioDeviceID {
+        var deviceID = AudioDeviceID(0)
+        var size = UInt32(MemoryLayout<AudioDeviceID>.size)
+        var address = AudioObjectPropertyAddress(
+            mSelector: kAudioHardwarePropertyDefaultInputDevice,
+            mScope: kAudioObjectPropertyScopeGlobal,
+            mElement: kAudioObjectPropertyElementMain
+        )
+        AudioObjectGetPropertyData(
+            AudioObjectID(kAudioObjectSystemObject),
+            &address, 0, nil, &size, &deviceID
+        )
+        return deviceID
+    }
+
+
     public func startMonitoring(_ handler: @escaping @Sendable () -> Void) {
         lock.lock()
         defer { lock.unlock() }
@@ -112,8 +154,14 @@ public final class AudioDeviceManager: @unchecked Sendable {
         let status = AudioObjectGetPropertyDataSize(deviceID, &propertyAddress, 0, nil, &dataSize)
         guard status == noErr, dataSize > 0 else { return false }
 
-        let bufferListPointer = UnsafeMutablePointer<AudioBufferList>.allocate(capacity: 1)
-        defer { bufferListPointer.deallocate() }
+        // Allocate the full size reported by CoreAudio — AudioBufferList can
+        // contain multiple AudioBuffers for multi-stream devices.
+        let rawPointer = UnsafeMutableRawPointer.allocate(
+            byteCount: Int(dataSize),
+            alignment: MemoryLayout<AudioBufferList>.alignment
+        )
+        defer { rawPointer.deallocate() }
+        let bufferListPointer = rawPointer.assumingMemoryBound(to: AudioBufferList.self)
 
         let getStatus = AudioObjectGetPropertyData(deviceID, &propertyAddress, 0, nil, &dataSize, bufferListPointer)
         guard getStatus == noErr else { return false }
@@ -142,5 +190,26 @@ public final class AudioDeviceManager: @unchecked Sendable {
         let status = AudioObjectGetPropertyData(deviceID, &propertyAddress, 0, nil, &dataSize, &result)
         guard status == noErr, let cfString = result?.takeRetainedValue() else { return nil }
         return cfString as String
+    }
+
+    private func deviceTransportType(_ deviceID: AudioDeviceID) -> UInt32? {
+        var propertyAddress = AudioObjectPropertyAddress(
+            mSelector: kAudioDevicePropertyTransportType,
+            mScope: kAudioObjectPropertyScopeGlobal,
+            mElement: kAudioObjectPropertyElementMain
+        )
+
+        var transportType: UInt32 = 0
+        var dataSize = UInt32(MemoryLayout<UInt32>.size)
+        let status = AudioObjectGetPropertyData(
+            deviceID,
+            &propertyAddress,
+            0,
+            nil,
+            &dataSize,
+            &transportType
+        )
+        guard status == noErr else { return nil }
+        return transportType
     }
 }

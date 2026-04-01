@@ -72,7 +72,7 @@ func qwenSupportsVerbatimOnly() {
 func parakeetSupportsVerbatimOnly() {
     #expect(ModelOption.parakeetTDT06BV3.supportedTranscriptionModes == [.verbatim])
     #expect(!ModelOption.parakeetTDT06BV3.supportsSmartTranscription)
-    #expect(ModelOption.parakeetTDT06BV3.providerDisplayName == "FluidAudio")
+    #expect(ModelOption.parakeetTDT06BV3.providerDisplayName == "NVIDIA")
 }
 
 @Test

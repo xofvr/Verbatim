@@ -159,56 +159,11 @@ struct GeneralPane: View {
 
 struct TranscriptionPane: View {
     @Bindable var viewModel: SettingsViewModel
-    @State private var showDeleteConfirmation = false
-    @State private var showAdvancedGroq = false
 
     var body: some View {
         Form {
-            // MARK: Model
-            Section("Model") {
-                Picker("Model", selection: Binding(
-                    get: { viewModel.selectedModelID },
-                    set: { viewModel.selectedModelID = $0 }
-                )) {
-                    ForEach(viewModel.availableModelOptions) { option in
-                        HStack {
-                            providerIcon(for: option)
-                                .resizable()
-                                .aspectRatio(contentMode: .fit)
-                                .frame(width: 12, height: 12)
-                                .clipShape(.rect(cornerRadius: 3))
-                            Text(option.displayName)
-                            if option.isRecommended {
-                                Text("Recommended")
-                                    .font(.caption2)
-                                    .foregroundStyle(.secondary)
-                            }
-                        }
-                        .tag(option.rawValue)
-                    }
-                }
+            ModelSection(viewModel: viewModel)
 
-                if let selectedModel = viewModel.downloadModel.selectedModelOption {
-                    if let size = selectedModel.sizeLabel {
-                        LabeledContent("Size") {
-                            Text(size)
-                        }
-                    }
-                    modelDownloadStatus
-                }
-
-                if viewModel.isWarmingModel {
-                    HStack(spacing: 8) {
-                        Image(systemName: "flame.fill")
-                            .foregroundStyle(.orange)
-                        Text("Warming up…")
-                            .foregroundStyle(.secondary)
-                    }
-                    .shimmering()
-                }
-            }
-
-            // MARK: Language
             Section("Language") {
                 TextField("Language code", text: Binding(viewModel.$preferredLanguage))
                     .textFieldStyle(.roundedBorder)
@@ -216,84 +171,10 @@ struct TranscriptionPane: View {
                     .settingDescription()
             }
 
-            // MARK: Groq API
-            Section("Groq API") {
-                Picker("Provider", selection: Binding(viewModel.$providerPolicy)) {
-                    ForEach(ProviderPolicy.allCases) { policy in
-                        Text(policy.displayName).tag(policy)
-                    }
-                }
-                Text(viewModel.effectiveProviderPolicy.description)
-                    .settingDescription()
+            GroqAPISection(viewModel: viewModel)
 
-                SecureField("API Key", text: Binding(
-                    get: { viewModel.groqAPIKeyDraft },
-                    set: { viewModel.groqAPIKeyDraft = $0 }
-                ))
-                .onSubmit {
-                    viewModel.saveGroqAPIKeyDraft()
-                }
+            AppleIntelligenceSection(viewModel: viewModel)
 
-                HStack {
-                    Button("Save Key") {
-                        viewModel.saveGroqAPIKeyDraft()
-                    }
-                    .disabled(viewModel.groqAPIKeyDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-
-                    if viewModel.hasGroqAPIKeyStored {
-                        Label("Saved", systemImage: "checkmark.circle.fill")
-                            .foregroundStyle(.green)
-                            .font(.caption)
-
-                        Spacer()
-
-                        Button("Remove Key", role: .destructive) {
-                            viewModel.clearGroqAPIKey()
-                        }
-                    }
-                }
-
-                Text(viewModel.hasGroqAPIKeyStored
-                     ? "Your key is saved. Enter a new one to replace it."
-                     : "Get a free API key from groq.com. Required for cloud transcription.")
-                    .settingDescription()
-
-                DisclosureGroup("Endpoint", isExpanded: $showAdvancedGroq) {
-                    TextField("API URL", text: Binding(viewModel.$groqAPIBaseURL))
-                        .textFieldStyle(.roundedBorder)
-                    Text("Only change this if you're using a custom Groq-compatible endpoint.")
-                        .settingDescription()
-                }
-                .font(.caption)
-                .foregroundStyle(.secondary)
-            }
-
-            // MARK: Apple Intelligence
-            Section {
-                if viewModel.appleIntelligenceAvailable {
-                    Toggle("Enhance with Apple Intelligence", isOn: Binding(viewModel.$appleIntelligenceEnabled))
-                    Text("Post-process transcriptions on-device to fix grammar, punctuation, and formatting.")
-                        .settingDescription()
-                } else {
-                    LabeledContent("Status") {
-                        Text("Unavailable")
-                            .foregroundStyle(.secondary)
-                    }
-                    Text("Requires macOS 26 with Apple Intelligence enabled.")
-                        .settingDescription()
-                }
-            } header: {
-                HStack(spacing: 6) {
-                    Image.appleIntelligence
-                        .resizable()
-                        .aspectRatio(contentMode: .fit)
-                        .frame(width: 16, height: 16)
-                        .clipShape(RoundedRectangle(cornerRadius: 3))
-                    Text("Apple Intelligence")
-                }
-            }
-
-            // MARK: Mode
             if viewModel.smartModeAvailable {
                 Section("Mode") {
                     Picker("Transcription Mode", selection: Binding(viewModel.$transcriptionMode)) {
@@ -314,7 +195,6 @@ struct TranscriptionPane: View {
                 }
             }
 
-            // MARK: Processing
             Section("Processing") {
                 Toggle("Trim silence", isOn: Binding(viewModel.$trimSilenceEnabled))
                 Text("Removes silent segments from the start and end of your recording.")
@@ -324,28 +204,8 @@ struct TranscriptionPane: View {
                     .settingDescription()
             }
 
-            // MARK: Vocabulary
-            Section("Vocabulary") {
-                TextField("Prompt Hints", text: Binding(
-                    get: { viewModel.vocabularyPromptHints },
-                    set: { viewModel.vocabularyPromptHints = $0 }
-                ), axis: .vertical)
-                .lineLimit(2 ... 4)
-                Text("Words and phrases the model should recognise (sent to Groq as context).")
-                    .settingDescription()
+            VocabularySection(viewModel: viewModel)
 
-                TextEditor(text: Binding(
-                    get: { viewModel.vocabularyTermsText },
-                    set: { viewModel.vocabularyTermsText = $0 }
-                ))
-                .font(.system(.body, design: .monospaced))
-                .frame(minHeight: 100)
-
-                Text("Replacements applied to all transcripts. One per line: `input=Replacement`")
-                    .settingDescription()
-            }
-
-            // MARK: Managed Config
             if !viewModel.managedConfigURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 Section("Managed Config") {
                     TextField("Config URL", text: Binding(viewModel.$managedConfigURL))
@@ -362,6 +222,58 @@ struct TranscriptionPane: View {
             }
         }
         .formStyle(.grouped)
+    }
+}
+
+// MARK: - Model Section
+
+private struct ModelSection: View {
+    @Bindable var viewModel: SettingsViewModel
+    @State private var showDeleteConfirmation = false
+
+    var body: some View {
+        Section("Model") {
+            Picker("Model", selection: Binding(
+                get: { viewModel.selectedModelID },
+                set: { viewModel.selectedModelID = $0 }
+            )) {
+                ForEach(viewModel.availableModelOptions) { option in
+                    HStack {
+                        providerIcon(for: option)
+                            .resizable()
+                            .aspectRatio(contentMode: .fit)
+                            .frame(width: 12, height: 12)
+                            .clipShape(.rect(cornerRadius: 3))
+                        Text(option.displayName)
+                        if option.isRecommended {
+                            Text("Recommended")
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    .tag(option.rawValue)
+                }
+            }
+
+            if let selectedModel = viewModel.downloadModel.selectedModelOption {
+                if let size = selectedModel.sizeLabel {
+                    LabeledContent("Size") {
+                        Text(size)
+                    }
+                }
+                downloadStatus
+            }
+
+            if viewModel.isWarmingModel {
+                HStack(spacing: 8) {
+                    Image(systemName: "flame.fill")
+                        .foregroundStyle(.orange)
+                    Text("Warming up…")
+                        .foregroundStyle(.secondary)
+                }
+                .shimmering()
+            }
+        }
         .alert("Delete Model", isPresented: $showDeleteConfirmation) {
             Button("Delete", role: .destructive) {
                 Task { await viewModel.deleteModelButtonTapped() }
@@ -384,7 +296,7 @@ struct TranscriptionPane: View {
     }
 
     @ViewBuilder
-    private var modelDownloadStatus: some View {
+    private var downloadStatus: some View {
         if let selectedModel = viewModel.downloadModel.selectedModelOption, !selectedModel.requiresDownload {
             LabeledContent("Status") {
                 Label("Ready", systemImage: "checkmark.circle.fill")
@@ -401,9 +313,9 @@ struct TranscriptionPane: View {
                     showDeleteConfirmation = true
                 }
             case let .downloading(progress):
-                downloadProgressSection(progress: progress, isPaused: false)
+                downloadProgress(progress: progress, isPaused: false)
             case let .paused(progress):
-                downloadProgressSection(progress: progress, isPaused: true)
+                downloadProgress(progress: progress, isPaused: true)
             case .notDownloaded, .preparing:
                 Button("Download Model") {
                     Task { await viewModel.downloadButtonTapped() }
@@ -420,7 +332,7 @@ struct TranscriptionPane: View {
     }
 
     @ViewBuilder
-    private func downloadProgressSection(progress: ModelDownloadState.Progress, isPaused: Bool) -> some View {
+    private func downloadProgress(progress: ModelDownloadState.Progress, isPaused: Bool) -> some View {
         let modelName = viewModel.downloadModel.downloadingModelOption?.displayName
             ?? viewModel.downloadModel.selectedModelOption?.displayName ?? "model"
         HStack(spacing: 12) {
@@ -448,6 +360,126 @@ struct TranscriptionPane: View {
             Button("Cancel") {
                 viewModel.cancelButtonTapped()
             }
+        }
+    }
+}
+
+// MARK: - Groq API Section
+
+private struct GroqAPISection: View {
+    @Bindable var viewModel: SettingsViewModel
+    @State private var showAdvancedGroq = false
+
+    var body: some View {
+        Section("Groq API") {
+            Picker("Provider", selection: Binding(viewModel.$providerPolicy)) {
+                ForEach(ProviderPolicy.allCases) { policy in
+                    Text(policy.displayName).tag(policy)
+                }
+            }
+            Text(viewModel.effectiveProviderPolicy.description)
+                .settingDescription()
+
+            SecureField("API Key", text: Binding(
+                get: { viewModel.groqAPIKeyDraft },
+                set: { viewModel.groqAPIKeyDraft = $0 }
+            ))
+            .onSubmit {
+                viewModel.saveGroqAPIKeyDraft()
+            }
+
+            HStack {
+                Button("Save Key") {
+                    viewModel.saveGroqAPIKeyDraft()
+                }
+                .disabled(viewModel.groqAPIKeyDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+
+                if viewModel.hasGroqAPIKeyStored {
+                    Label("Saved", systemImage: "checkmark.circle.fill")
+                        .foregroundStyle(.green)
+                        .font(.caption)
+
+                    Spacer()
+
+                    Button("Remove Key", role: .destructive) {
+                        viewModel.clearGroqAPIKey()
+                    }
+                }
+            }
+
+            Text(viewModel.hasGroqAPIKeyStored
+                 ? "Your key is saved. Enter a new one to replace it."
+                 : "Get a free API key from groq.com. Required for cloud transcription.")
+                .settingDescription()
+
+            DisclosureGroup("Endpoint", isExpanded: $showAdvancedGroq) {
+                TextField("API URL", text: Binding(viewModel.$groqAPIBaseURL))
+                    .textFieldStyle(.roundedBorder)
+                Text("Only change this if you're using a custom Groq-compatible endpoint.")
+                    .settingDescription()
+            }
+            .font(.caption)
+            .foregroundStyle(.secondary)
+        }
+    }
+}
+
+// MARK: - Apple Intelligence Section
+
+private struct AppleIntelligenceSection: View {
+    @Bindable var viewModel: SettingsViewModel
+
+    var body: some View {
+        Section {
+            if viewModel.appleIntelligenceAvailable {
+                Toggle("Enhance with Apple Intelligence", isOn: Binding(viewModel.$appleIntelligenceEnabled))
+                Text("Post-process transcriptions on-device to fix grammar, punctuation, and formatting.")
+                    .settingDescription()
+            } else {
+                LabeledContent("Status") {
+                    Text("Unavailable")
+                        .foregroundStyle(.secondary)
+                }
+                Text("Requires macOS 26 with Apple Intelligence enabled.")
+                    .settingDescription()
+            }
+        } header: {
+            HStack(spacing: 6) {
+                Image.appleIntelligence
+                    .resizable()
+                    .aspectRatio(contentMode: .fit)
+                    .frame(width: 16, height: 16)
+                    .clipShape(RoundedRectangle(cornerRadius: 3))
+                Text("Apple Intelligence")
+            }
+        }
+    }
+}
+
+// MARK: - Vocabulary Section
+
+private struct VocabularySection: View {
+    @Bindable var viewModel: SettingsViewModel
+
+    var body: some View {
+        Section("Vocabulary") {
+            TextField("Prompt Hints", text: Binding(
+                get: { viewModel.vocabularyPromptHints },
+                set: { viewModel.vocabularyPromptHints = $0 }
+            ), axis: .vertical)
+            .lineLimit(2 ... 4)
+            Text("Words and phrases the model should recognise (sent to Groq as context).")
+                .settingDescription()
+
+            TextEditor(text: Binding(
+                get: { viewModel.vocabularyTermsText },
+                set: { viewModel.vocabularyTermsText = $0 }
+            ))
+            .font(.system(.body, design: .monospaced))
+            .frame(minHeight: 100)
+
+            Text("Replacements applied to all transcripts. One per line: `input=Replacement`")
+                .settingDescription()
         }
     }
 }

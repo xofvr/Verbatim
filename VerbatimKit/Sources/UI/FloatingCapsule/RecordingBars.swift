@@ -15,6 +15,7 @@ struct RecordingBars: View {
         }
         .frame(height: 16)
         .animation(.linear(duration: 0.1), value: self.level)
+        .accessibilityHidden(true)
     }
 
     private func barHeight(base: CGFloat) -> CGFloat {

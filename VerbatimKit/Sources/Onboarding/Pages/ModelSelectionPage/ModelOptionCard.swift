@@ -36,6 +36,7 @@ struct ModelOptionCard: View {
                 Image(systemName: checkmarkIcon)
                     .font(.title3)
                     .foregroundStyle(isSelected ? .primary : .tertiary)
+                    .accessibilityHidden(true)
             }
             .padding(14)
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -52,6 +53,7 @@ struct ModelOptionCard: View {
         .onHover { hovering in
             isHovering = hovering
         }
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 }
 

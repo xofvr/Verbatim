@@ -45,6 +45,8 @@ final class AppModel {
     @ObservationIgnored @Shared(.transcriptionMode) var transcriptionMode: TranscriptionMode = .verbatim
     @ObservationIgnored @Shared(.smartPrompt) var smartPrompt = "Clean up filler words and repeated phrases. Return a polished version of what was said."
     @ObservationIgnored @Shared(.appleIntelligenceEnabled) var appleIntelligenceEnabled = false
+    @ObservationIgnored @Shared(.trimSilenceEnabled) private var trimSilenceEnabled = false
+    @ObservationIgnored @Shared(.autoSpeedEnabled) private var autoSpeedEnabled = false
     @ObservationIgnored @Shared(.compressHistoryAudio) var compressHistoryAudio = false
     @ObservationIgnored @Shared(.historyRetentionMode) var historyRetentionMode: HistoryRetentionMode = .both
     @ObservationIgnored @Shared(.pushToTalkThreshold) var pushToTalkThreshold: PushToTalkThreshold = .long
@@ -126,7 +128,7 @@ final class AppModel {
     @ObservationIgnored private var activeHistorySessionID: UUID?
     @ObservationIgnored private var lastSecureEventInputEnabled = false
     var menuBarFlashOn = true
-    @ObservationIgnored private var estimatedTranscriptionRTF = 2.2
+    @ObservationIgnored private var estimatedTranscriptionRTF = ProgressTracking.defaultRTF
     private var toggleActivationThresholdSeconds: Double { pushToTalkThreshold.seconds }
     private var usesHoldToRecordShortcutFlow: Bool { shortcutTriggerMode == .doubleTap }
     nonisolated private static let deepLinkStartTimeoutSeconds = 12.0
@@ -419,7 +421,7 @@ final class AppModel {
             return
         }
 
-        lastError = "Microphone access is required to record audio."
+        lastError = VerbatimError.microphoneDenied.fullMessage
     }
 
     func accessibilityPermissionButtonTapped() {
@@ -564,8 +566,9 @@ final class AppModel {
                 return
             }
         } catch {
-            sessionState = .error(error.localizedDescription)
-            lastError = error.localizedDescription
+            let appError = VerbatimError.recordingFailed(error.localizedDescription)
+            sessionState = .error(appError.errorDescription ?? "")
+            lastError = appError.fullMessage
             pushToTalkIsActive = false
             currentShortcutPressStart = nil
             await floatingCapsuleClient.showError("Recording failed")
@@ -677,11 +680,11 @@ final class AppModel {
             let audioSizeBytes = appAudioFileSizeBytes(audioURL) ?? 0
 
             guard let selectedModelOption else {
-                throw AppTranscriptionError.pipelineUnavailable
+                throw VerbatimError.pipelineUnavailable
             }
 
             let audioDuration = transcriptionClient.audioDurationSeconds(audioURL)
-            if audioDuration < 0.1 {
+            if audioDuration < TranscriptionConstants.minimumRecordingDuration {
                 consoleLog("Recording too short (\(String(format: "%.3f", audioDuration))s), skipping")
                 sessionState = .idle
                 lastError = nil
@@ -707,7 +710,7 @@ final class AppModel {
                 )
             )
 
-            if autoSpeedRate(for: audioDuration) != nil {
+            if TranscriptionConstants.autoSpeedRate(for: audioDuration) != nil {
                 sessionState = .processing(.speeding)
                 await floatingCapsuleClient.showSpeeding()
             }
@@ -732,7 +735,9 @@ final class AppModel {
                 mode == .smart ? smartPrompt : nil,
                 effectiveProviderPolicy,
                 preferredLanguage,
-                effectiveVocabularyProfile
+                effectiveVocabularyProfile,
+                trimSilenceEnabled,
+                autoSpeedEnabled
             )
             var transcript = effectiveVocabularyProfile.applying(to: transcriptionResult.text)
             let transcriptionCallElapsed = now.timeIntervalSince(transcriptionCallStart)
@@ -1014,9 +1019,10 @@ final class AppModel {
                 )
             )
         } catch {
-            lastError = error.localizedDescription
-            transientMessage = "Transcription failed."
-            sessionState = .error(error.localizedDescription)
+            let appError = VerbatimError.transcriptionFailed(error.localizedDescription)
+            lastError = appError.fullMessage
+            transientMessage = appError.errorDescription
+            sessionState = .error(appError.errorDescription ?? "")
             stopTranscriptionProgressTracking()
             await floatingCapsuleClient.showError("Transcription failed")
             logger.error("Transcription failed: \(error.localizedDescription, privacy: .public)")
@@ -1463,8 +1469,9 @@ final class AppModel {
             Task { await soundClient.playRecordingStarted() }
             await floatingCapsuleClient.showRecording()
         } catch {
-            sessionState = .error(error.localizedDescription)
-            lastError = error.localizedDescription
+            let appError = VerbatimError.recordingFailed(error.localizedDescription)
+            sessionState = .error(appError.errorDescription ?? "")
+            lastError = appError.fullMessage
             await floatingCapsuleClient.showError("Recording failed")
             logger.error("Deep link start failed: \(error.localizedDescription, privacy: .public)")
             consoleLog("Deep link start failed: \(error.localizedDescription)")
@@ -1742,15 +1749,6 @@ final class AppModel {
         return .verbatim
     }
 
-    private func autoSpeedRate(for audioDuration: Double) -> Double? {
-        switch audioDuration {
-        case ..<45: return nil
-        case 45..<90: return 1.1
-        case 90..<180: return 1.2
-        default: return 1.25
-        }
-    }
-
     private func postPasteFallbackNotification() async {
         if isPreviewMode { return }
         let center = UNUserNotificationCenter.current()
@@ -1802,15 +1800,15 @@ final class AppModel {
                 let progress: Double
                 if normalized <= 1 {
                     // Move faster in the early/mid phase so progress does not feel stalled.
-                    progress = min(pow(normalized, 0.72) * 0.94, 0.94)
+                    progress = min(pow(normalized, ProgressTracking.earlyPhaseExponent) * ProgressTracking.midCap, ProgressTracking.midCap)
                 } else {
                     // Keep advancing past expected duration instead of freezing in the high 90s.
                     let tail = min((normalized - 1) / 2.0, 1)
-                    progress = 0.94 + (0.995 - 0.94) * tail
+                    progress = ProgressTracking.midCap + (ProgressTracking.tailCap - ProgressTracking.midCap) * tail
                 }
                 await self.floatingCapsuleClient.updateTranscriptionProgress(progress)
 
-                try? await self.clock.sleep(for: .milliseconds(120))
+                try? await self.clock.sleep(for: ProgressTracking.updateInterval)
             }
         }
     }
@@ -1831,7 +1829,7 @@ final class AppModel {
     }
 
     private func defaultTranscriptionRTF(for model: ModelOption?) -> Double {
-        guard let model else { return 2.2 }
+        guard let model else { return ProgressTracking.defaultRTF }
 
         switch model {
         case .groqWhisperLargeV3Turbo:
@@ -1856,8 +1854,7 @@ final class AppModel {
     private func updateTranscriptionSpeedEstimate(audioDuration: Double, elapsed: Double) {
         guard audioDuration > 0, elapsed > 0 else { return }
         let latestRTF = audioDuration / elapsed
-        let alpha = 0.25
-        estimatedTranscriptionRTF = (1 - alpha) * estimatedTranscriptionRTF + alpha * latestRTF
+        estimatedTranscriptionRTF = (1 - ProgressTracking.rtfSmoothingAlpha) * estimatedTranscriptionRTF + ProgressTracking.rtfSmoothingAlpha * latestRTF
     }
 
     private func appendTranscriptHistory(
@@ -1938,20 +1935,6 @@ final class AppModel {
     }
 }
 
-private enum AppTranscriptionError: LocalizedError {
-    case pipelineUnavailable
-    case recordingTooShort
-
-    var errorDescription: String? {
-        switch self {
-        case .pipelineUnavailable:
-            return "Transcription pipeline is not available."
-        case .recordingTooShort:
-            return "Recording was too short to transcribe."
-        }
-    }
-}
-
 private final class ContinuationGate: @unchecked Sendable {
     private let lock = NSLock()
     private var didResume = false
@@ -1997,4 +1980,22 @@ extension AppModel {
         configure(model)
         return model
     }
+}
+
+// MARK: - Private Constants
+
+/// Progress-bar animation and RTF-estimation constants.
+private enum ProgressTracking {
+    /// Initial/fallback RTF (real-time factor) when no model-specific estimate is available.
+    static let defaultRTF = 2.2
+    /// Exponent for the fast-advance curve during the early phase (< expected duration).
+    static let earlyPhaseExponent = 0.72
+    /// Progress cap at the end of the early phase.
+    static let midCap = 0.94
+    /// Maximum progress shown before the actual completion signal arrives.
+    static let tailCap = 0.995
+    /// How often the progress bar is updated.
+    static let updateInterval: Duration = .milliseconds(120)
+    /// Exponential-smoothing alpha for the live RTF estimate.
+    static let rtfSmoothingAlpha = 0.25
 }

@@ -18,6 +18,7 @@ struct CancelConfirmationCapsule: View {
             Image(systemName: "escape")
                 .font(.caption2.weight(.semibold))
                 .foregroundStyle(.secondary)
+                .accessibilityHidden(true)
 
             (
                 Text("Cancel recording?  ")
@@ -28,6 +29,8 @@ struct CancelConfirmationCapsule: View {
             .lineLimit(1)
         }
         .floatingCapsuleChrome(blur: blur)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Cancel recording? Press Y to confirm")
         .overlay {
             Capsule()
                 .trim(from: 0, to: progress)

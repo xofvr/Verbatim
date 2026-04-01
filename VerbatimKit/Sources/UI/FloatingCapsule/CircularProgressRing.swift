@@ -23,6 +23,7 @@ public struct CircularProgressRing: View {
         }
         .frame(width: self.size, height: self.size)
         .animation(.linear(duration: 0.15), value: self.progress)
+        .accessibilityHidden(true)
     }
 }
 

@@ -55,14 +55,18 @@ public struct FloatingCapsuleView: View {
             Circle()
                 .fill(.red)
                 .frame(width: 8, height: 8)
+                .accessibilityHidden(true)
 
             Text("REC")
                 .font(.footnote.weight(.semibold))
                 .foregroundStyle(.primary)
 
             RecordingBars(level: self.state.level)
+                .accessibilityHidden(true)
         }
         .floatingCapsuleChrome(blur: blurRadius)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Recording in progress")
     }
 
     private var confirmCancel: some View {
@@ -74,12 +78,15 @@ public struct FloatingCapsuleView: View {
             Image(systemName: "scissors")
                 .font(.caption2.weight(.semibold))
                 .foregroundStyle(.orange)
+                .accessibilityHidden(true)
 
             Text("Trimming silence")
                 .font(.footnote.weight(.semibold))
                 .foregroundStyle(.primary)
         }
         .floatingCapsuleChrome(blur: blurRadius)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Trimming silence from recording")
     }
 
     private var speeding: some View {
@@ -87,23 +94,30 @@ public struct FloatingCapsuleView: View {
             Image(systemName: "figure.run")
                 .font(.caption2.weight(.semibold))
                 .foregroundStyle(.teal)
+                .accessibilityHidden(true)
 
             Text("Speeding audio")
                 .font(.footnote.weight(.semibold))
                 .foregroundStyle(.teal)
         }
         .floatingCapsuleChrome(blur: blurRadius)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Speeding up audio")
     }
 
     private var transcribing: some View {
         HStack(spacing: 8) {
             CircularProgressRing(progress: self.state.transcriptionProgress)
+                .accessibilityHidden(true)
 
             Text("Transcribing")
                 .font(.footnote.weight(.semibold))
                 .foregroundStyle(.primary)
         }
         .floatingCapsuleChrome(blur: blurRadius)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Transcribing")
+        .accessibilityValue("\(Int(self.state.transcriptionProgress * 100)) percent complete")
     }
 
     private var error: some View {
@@ -111,12 +125,15 @@ public struct FloatingCapsuleView: View {
             Image(systemName: "exclamationmark.triangle.fill")
                 .foregroundStyle(.orange)
                 .font(.caption2.weight(.bold))
+                .accessibilityHidden(true)
 
             Text("Error")
                 .font(.footnote.weight(.semibold))
                 .foregroundStyle(.primary)
         }
         .floatingCapsuleChrome(blur: blurRadius)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("An error occurred")
     }
 
     private var copiedToClipboard: some View {
@@ -124,6 +141,7 @@ public struct FloatingCapsuleView: View {
             Image(systemName: "checkmark.circle.fill")
                 .foregroundStyle(.green)
                 .font(.caption2.weight(.bold))
+                .accessibilityHidden(true)
 
             Text("Copied to clipboard")
                 .font(.footnote.weight(.semibold))
@@ -131,6 +149,8 @@ public struct FloatingCapsuleView: View {
         }
         .frame(height: 20)
         .floatingCapsuleChrome(blur: blurRadius)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Transcript copied to clipboard")
     }
 
     private var accessibilityPrompt: some View {
@@ -141,6 +161,7 @@ public struct FloatingCapsuleView: View {
                 Image(systemName: "accessibility")
                     .foregroundStyle(.blue)
                     .font(.caption2.weight(.bold))
+                    .accessibilityHidden(true)
 
                 Text("Enable Accessibility")
                     .font(.footnote.weight(.semibold))
@@ -150,6 +171,8 @@ public struct FloatingCapsuleView: View {
             .floatingCapsuleChrome(blur: blurRadius)
         }
         .buttonStyle(.plain)
+        .accessibilityLabel("Enable Accessibility access")
+        .accessibilityHint("Opens System Settings to grant Accessibility permission for pasting")
     }
 
     private var accessibilityEnabled: some View {
@@ -157,6 +180,7 @@ public struct FloatingCapsuleView: View {
             Image(systemName: "checkmark.circle.fill")
                 .foregroundStyle(.green)
                 .font(.caption2.weight(.bold))
+                .accessibilityHidden(true)
 
             Text("Accessibility Enabled")
                 .font(.footnote.weight(.semibold))
@@ -164,6 +188,8 @@ public struct FloatingCapsuleView: View {
         }
         .frame(height: 20)
         .floatingCapsuleChrome(blur: blurRadius)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Accessibility Enabled")
     }
 
 }

@@ -31,6 +31,8 @@
 	<string>$(CURRENT_PROJECT_VERSION)</string>
 	<key>LSUIElement</key>
 	<true/>
+	<key>NSAccessibilityUsageDescription</key>
+	<string>Verbatim uses Accessibility to paste transcriptions directly into your active app and to detect your global keyboard shortcut.</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>Verbatim records audio while you hold your push-to-talk shortcut.</string>
 	<key>NSSpeechRecognitionUsageDescription</key>

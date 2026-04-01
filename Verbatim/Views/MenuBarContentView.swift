@@ -56,6 +56,8 @@ struct MenuBarContentView: View {
                                     .font(.caption)
                             }
                         }
+                        .accessibilityLabel("\(item.title), \(item.subtitle)")
+                        .accessibilityHint("Copies this transcript to the clipboard")
                     }
                 }
             }

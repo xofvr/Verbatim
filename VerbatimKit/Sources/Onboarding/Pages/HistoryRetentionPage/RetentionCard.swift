@@ -54,6 +54,7 @@ struct RetentionCard: View {
         .scaleEffect(isHovering ? 1.04 : 1.0)
         .animation(.easeOut(duration: 0.2), value: isHovering)
         .onHover { isHovering = $0 }
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 
     // MARK: - Subviews
@@ -84,6 +85,7 @@ struct RetentionCard: View {
             .font(.body)
             .foregroundStyle(isSelected ? .white : Color.white.opacity(0.2))
             .padding(14)
+            .accessibilityHidden(true)
     }
 
     private var border: some View {

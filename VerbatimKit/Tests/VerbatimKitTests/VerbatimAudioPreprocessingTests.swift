@@ -51,14 +51,16 @@ func speedUpReducesDurationAtExpectedRate() async throws {
 @Test
 func transcriptionClientUsesTrimAndSpeedDependenciesBeforeMLX() async throws {
     let recorder = CallRecorder()
-    let appStorage = UserDefaults.inMemory
     let sampleRate = 16_000.0
     let samples = makeSineWave(count: 800_000, sampleRate: sampleRate, amplitude: 0.4, frequency: 440)
     let audioURL = try writeAudio(samples: samples, sampleRate: sampleRate, prefix: "transcribe-input")
     defer { try? FileManager.default.removeItem(at: audioURL) }
 
     let output = try await withDependencies {
-        $0.defaultAppStorage = appStorage
+        $0.logClient.debug = { _, _ in }
+        $0.logClient.info = { _, _ in }
+        $0.logClient.error = { _, _ in }
+        $0.logClient.dumpDebug = { _, _, _ in }
         $0.mlxClient = MLXClient(
             isModelDownloaded: { _ in true },
             downloadModel: { _, _ in },
@@ -84,14 +86,10 @@ func transcriptionClientUsesTrimAndSpeedDependenciesBeforeMLX() async throws {
             return url
         }
     } operation: {
-        @Shared(.trimSilenceEnabled) var trimEnabled = false
-        @Shared(.autoSpeedEnabled) var speedEnabled = false
-        $trimEnabled.withLock { $0 = true }
-        $speedEnabled.withLock { $0 = true }
-        return try await TranscriptionClient.liveValue.transcribe(audioURL, .mini3b, .verbatim, nil)
+        return try await TranscriptionClient.liveValue.transcribe(audioURL, .mini3b, .verbatim, nil, .localOnly, nil, VocabularyProfile(), true, true)
     }
 
-    #expect(output == "ok")
+    #expect(output.text == "ok")
     let calls = await recorder.snapshot()
     #expect(calls == ["prepare", "trim", "speed:1.10", "mlx"])
 }

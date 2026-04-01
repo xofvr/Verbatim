@@ -55,8 +55,11 @@ build-release/
 
 # ===== Claude Code =====
 .claude/
+CLAUDE.md
+tasks/
 
 # ===== Temp & logs =====
+.tmp-*/
 *.tmp
 *.log
 *.dump

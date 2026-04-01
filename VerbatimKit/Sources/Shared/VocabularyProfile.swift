@@ -41,7 +41,7 @@ public struct VocabularyProfile: Codable, Equatable, Sendable {
             partial.replacingOccurrences(
                 of: entry.key,
                 with: entry.value,
-                options: [.caseInsensitive, .regularExpression],
+                options: [.caseInsensitive],
                 range: nil
             )
         }

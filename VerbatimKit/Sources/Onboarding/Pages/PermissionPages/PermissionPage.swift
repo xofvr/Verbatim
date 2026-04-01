@@ -64,6 +64,7 @@ struct PermissionPage: View {
             Circle()
                 .fill(isAuthorized ? Color.green : Color.red)
                 .frame(width: 8, height: 8)
+                .accessibilityHidden(true)
 
             Text(isAuthorized ? "Enabled" : "Not Enabled")
                 .font(.caption.weight(.semibold))

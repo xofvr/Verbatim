@@ -1,11 +1,11 @@
 import AVFoundation
 import Dependencies
 import DependenciesMacros
-import FluidAudio
+@preconcurrency import FluidAudio
 import Foundation
 import LogClient
 import VoxtralCore
-import WhisperKit
+@preconcurrency import WhisperKit
 
 /// Root directory for all Verbatim model data: ~/Library/Application Support/Verbatim/
 private let verbatimDirectory: URL = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
@@ -267,10 +267,10 @@ private actor LiveMLXRuntime {
         case .mini3b, .mini3b8bit:
             log("prepare.voxtral.begin model=\(model.rawValue)")
             var config = VoxtralPipeline.Configuration.default
-            config.maxTokens = 1024
-            config.temperature = 0.0
-            config.topP = 0.95
-            config.repetitionPenalty = 1.15
+            config.maxTokens = VoxtralDefaults.maxTokens
+            config.temperature = VoxtralDefaults.temperature
+            config.topP = VoxtralDefaults.topP
+            config.repetitionPenalty = VoxtralDefaults.repetitionPenalty
 
             let pipeline = VoxtralPipeline(
                 model: model.voxtralModel,
@@ -409,9 +409,8 @@ private actor LiveMLXRuntime {
                     throw MLXError.pipelineUnavailable
                 }
 
-                nonisolated(unsafe) let manager = parakeetAsrManager
                 let inferenceStart = ProcessInfo.processInfo.systemUptime
-                let result = try await manager.transcribe(audioURL, source: .system)
+                let result = try await parakeetAsrManager.transcribe(audioURL, source: .system)
                 let inferenceElapsed = ProcessInfo.processInfo.systemUptime - inferenceStart
                 log(
                     "transcribe.parakeet.inference completed elapsed=\(formatElapsedSeconds(inferenceElapsed)), rawChars=\(result.text.count)"
@@ -429,10 +428,9 @@ private actor LiveMLXRuntime {
                 guard let whisperKitInstance else {
                     throw MLXError.pipelineUnavailable
                 }
-                nonisolated(unsafe) let instance = whisperKitInstance
                 let audioPath = audioURL.path
                 let whisperStart = ProcessInfo.processInfo.systemUptime
-                let results = try await instance.transcribe(audioPath: audioPath)
+                let results = try await whisperKitInstance.transcribe(audioPath: audioPath)
                 let whisperElapsed = ProcessInfo.processInfo.systemUptime - whisperStart
                 log(
                     "transcribe.whisper.backend completed elapsed=\(formatElapsedSeconds(whisperElapsed)), segments=\(results.count)"
@@ -819,6 +817,13 @@ private func mlxAudioDurationSeconds(_ url: URL) -> Double {
     let sampleRate = file.fileFormat.sampleRate
     guard sampleRate > 0 else { return 0 }
     return Double(file.length) / sampleRate
+}
+
+private enum VoxtralDefaults {
+    static let maxTokens = 1024
+    static let temperature: Float = 0.0
+    static let topP: Float = 0.95
+    static let repetitionPenalty: Float = 1.15
 }
 
 private func mlxAudioFileSizeBytes(_ url: URL) -> Int64? {
