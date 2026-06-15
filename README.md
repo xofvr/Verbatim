@@ -2,17 +2,34 @@
 
 Real-time speech-to-text for macOS. Hold a shortcut, speak, and your words are transcribed instantly — powered by on-device ML models.
 
-## Download
-
-Grab the latest `.dmg` from [**Releases**](../../releases).
-
 ## Install
 
-1. Open the downloaded **Verbatim-x.x.x.dmg**
-2. Drag **Verbatim** into **Applications**
-3. Open Verbatim from Applications — macOS will block it the first time
-4. Go to **System Settings → Privacy & Security**, scroll down, and click **Open Anyway**
-5. You only need to do this once
+### Option A — Homebrew (recommended)
+
+```bash
+brew install --cask xofvr/tap/verbatim
+```
+
+Homebrew downloads Verbatim, installs it to **Applications**, and clears the
+macOS "quarantine" flag for you — so it just opens, no extra steps. Update
+later with `brew upgrade --cask verbatim`.
+
+### Option B — Direct download
+
+1. Grab the latest `.dmg` from [**Releases**](../../releases)
+2. Open it and drag **Verbatim** into **Applications**
+3. Run this once in **Terminal**, then open Verbatim normally:
+
+   ```bash
+   xattr -dr com.apple.quarantine /Applications/Verbatim.app
+   ```
+
+> **Why the extra step for Option B?** Verbatim isn't notarized by Apple yet
+> (that needs a paid Apple Developer account). macOS tags anything downloaded
+> from the web with a "quarantine" flag and blocks un-notarized apps — sometimes
+> with a misleading *"Verbatim is damaged and can't be opened"* message. The app
+> is **not** actually damaged; the command just removes that download flag.
+> Homebrew (Option A) does this for you automatically.
 
 ## First Launch
 
@@ -32,6 +49,15 @@ Verbatim runs in your **menu bar** (top-right of your screen). On first launch, 
 
 You need Xcode 16+ installed.
 
+On Xcode 16/26 the **Metal Toolchain** is a separate download, and the MLX
+dependency needs it to compile its shaders. Install it once:
+
+```bash
+xcodebuild -downloadComponent MetalToolchain
+```
+
+Then build:
+
 ```bash
 # Clone the repo
 git clone <repo-url>
@@ -40,8 +66,17 @@ cd Verbatim
 # Open in Xcode
 open Verbatim.xcodeproj
 
-# Or build from the command line
+# Or build a distributable .dmg from the command line
 ./scripts/build-release.sh
 ```
 
-The build script outputs a `.dmg` in `build-release/` that you can share directly.
+The build script outputs a correctly-sealed `.dmg` in `build-release/`.
+
+By default it produces an **ad-hoc signed** build (free, no Apple account
+needed). To produce a **notarized** build that opens with a plain double-click,
+set up an Apple Developer account and export these before running the script:
+
+```bash
+export DEVELOPER_ID_APP="Developer ID Application: Your Name (TEAMID)"
+export NOTARY_PROFILE="verbatim"   # created via: xcrun notarytool store-credentials
+```
