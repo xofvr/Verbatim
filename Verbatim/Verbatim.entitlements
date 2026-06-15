@@ -4,5 +4,11 @@
 <dict>
 	<key>com.apple.security.device.audio-input</key>
 	<true/>
+	<!-- Required so the hardened-runtime app can load its embedded
+	     Sparkle.framework when the build is ad-hoc signed (each ad-hoc
+	     signature has a different Team ID, which library validation would
+	     otherwise reject with "different Team IDs", crashing at launch). -->
+	<key>com.apple.security.cs.disable-library-validation</key>
+	<true/>
 </dict>
 </plist>
